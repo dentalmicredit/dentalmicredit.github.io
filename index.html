@@ -148,6 +148,12 @@ tr:hover td { background: var(--brand-light); }
       <section id="view-funil" class="view-content" style="display:none"><div class="kanban" id="funil-kanban"></div></section>
       <!-- CARTEIRA -->
       <section id="view-carteira" class="view-content" style="display:none">
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <select id="filtro-estagio" onchange="renderCarteira()" style="padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px"><option value="">Todos os Estágios</option></select>
+          <select id="filtro-operadora" onchange="renderCarteira()" style="padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px"><option value="">Todas as Operadoras</option></select>
+          <select id="filtro-vendedor" onchange="renderCarteira()" style="padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px"><option value="">Todos os Vendedores</option></select>
+          <button class="btn btn-secondary" onclick="limparFiltrosCarteira()">Limpar Filtros</button>
+        </div>
         <div class="table-container">
           <table id="table-carteira"><thead><tr id="head-carteira"></tr></thead><tbody id="table-body-carteira"></tbody></table>
         </div>
@@ -274,7 +280,7 @@ async function initApp(){
 }
 
 async function carregarDados(){
-  const { data, error } = await sb.from('contratos').select('*').order('id',{ascending:true});
+  const { data, error } = await sb.from('contratos').select('*').order('id',{ascending:false});
   if(error){
     throw new Error('Não foi possível carregar a carteira: ' + error.message);
   }
@@ -335,16 +341,58 @@ function renderFunil(){
   const data = getVisibleData();
   document.getElementById('funil-kanban').innerHTML = ESTAGIOS.map(est => {
     const cards = data.filter(c => c.estagio === est);
-    return `<div class="kanban-col"><h4><span>${est}</span> <span class="badge" style="background:white;color:var(--brand)">${cards.length}</span></h4>
-      ${cards.map(c => `<div class="kanban-card" onclick="abrirEdicao(${c.id})"><div style="font-weight:700;font-size:14px;margin-bottom:6px">${c.cliente}</div><div style="font-size:11px;color:var(--text-muted)">${c.operadora} · R$ ${c.premio.toLocaleString()}</div><div style="font-size:10px;margin-top:6px;opacity:0.6;font-weight:600">${c.consultor}</div></div>`).join('')}</div>`;
+    return `<div class="kanban-col" ondragover="permitirDrop(event)" ondrop="dropCard(event,'${est}')" data-estagio="${est}"><h4><span>${est}</span> <span class="badge" style="background:white;color:var(--brand)">${cards.length}</span></h4>
+      ${cards.map(c => `<div class="kanban-card" draggable="true" ondragstart="arrastarCard(event,${c.id})" onclick="abrirEdicao(${c.id})"><div style="font-weight:700;font-size:14px;margin-bottom:6px">${c.cliente}</div><div style="font-size:11px;color:var(--text-muted)">${c.operadora} · R$ ${c.premio.toLocaleString()}</div><div style="font-size:10px;margin-top:6px;opacity:0.6;font-weight:600">${c.consultor}</div></div>`).join('')}</div>`;
   }).join('');
+}
+
+function arrastarCard(e, id){ e.dataTransfer.setData('text/plain', id); }
+function permitirDrop(e){ e.preventDefault(); }
+
+async function dropCard(e, novoEstagio){
+  e.preventDefault();
+  const id = Number(e.dataTransfer.getData('text/plain'));
+  const c = db.find(x => x.id === id);
+  if(!c || c.estagio === novoEstagio) return;
+  c.estagio = novoEstagio;
+  renderFunil();
+  renderCarteira();
+  const { error } = await sb.from('contratos').update({ estagio: novoEstagio }).eq('id', id);
+  if(error){ alert('Erro ao atualizar estágio: ' + error.message); await carregarDados(); renderFunil(); renderCarteira(); return; }
+  logAtividade('mover_estagio', `${c.cliente} → ${novoEstagio}`);
 }
 
 function filtrarGlobal(q){ filtroAtivo = q.toLowerCase(); renderCarteira(); }
 
+function popularFiltrosCarteira(){
+  const data = getVisibleData();
+  const selEst = document.getElementById('filtro-estagio'), selOp = document.getElementById('filtro-operadora'), selVend = document.getElementById('filtro-vendedor');
+  if(!selEst || selEst.dataset.pop) return;
+  selEst.innerHTML = '<option value="">Todos os Estágios</option>' + ESTAGIOS.map(e=>`<option value="${e}">${e}</option>`).join('');
+  const ops = [...new Set(data.map(c=>c.operadora))].filter(Boolean).sort();
+  selOp.innerHTML = '<option value="">Todas as Operadoras</option>' + ops.map(o=>`<option value="${o}">${o}</option>`).join('');
+  const vends = [...new Set(data.map(c=>c.consultor))].filter(Boolean).sort();
+  selVend.innerHTML = '<option value="">Todos os Vendedores</option>' + vends.map(v=>`<option value="${v}">${v}</option>`).join('');
+  selEst.dataset.pop = '1';
+}
+
+function limparFiltrosCarteira(){
+  ['filtro-estagio','filtro-operadora','filtro-vendedor'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  filtroAtivo = '';
+  document.getElementById('global-search').value = '';
+  renderCarteira();
+}
+
 function renderCarteira(){
   let data = getVisibleData();
+  popularFiltrosCarteira();
   if(filtroAtivo) data = data.filter(c => c.cliente.toLowerCase().includes(filtroAtivo) || c.consultor.toLowerCase().includes(filtroAtivo) || c.operadora.toLowerCase().includes(filtroAtivo));
+  const fEst = document.getElementById('filtro-estagio')?.value;
+  const fOp = document.getElementById('filtro-operadora')?.value;
+  const fVend = document.getElementById('filtro-vendedor')?.value;
+  if(fEst) data = data.filter(c => c.estagio === fEst);
+  if(fOp) data = data.filter(c => c.operadora === fOp);
+  if(fVend) data = data.filter(c => c.consultor === fVend);
   const isM = PERFIS_MASTER.includes(JSON.parse(localStorage.getItem('crm_user')).cargo);
   document.getElementById('head-carteira').innerHTML = `<th>Cliente</th><th>Operadora</th><th>Vidas</th><th>Prêmio</th><th>Estágio</th>` + (isM ? `<th>Vendedor</th>` : '') + `<th>Status</th>`;
   document.getElementById('table-body-carteira').innerHTML = data.map(c => `
@@ -366,8 +414,27 @@ function renderFinanceiro(){
 
 function renderEquipe(){
     document.getElementById('table-body-equipe').innerHTML = users_db.map(u => `
-    <tr><td><b>${u.nome}</b></td><td>${u.usuario}</td><td>${u.cargo}</td><td><span class="badge ${u.ativo?'bg-ok':'bg-danger'}">${u.ativo?'Ativo':'Inativo'}</span></td><td>—</td></tr>
+    <tr><td><b>${u.nome}</b></td><td>${u.usuario}</td><td>${u.cargo}</td>
+      <td><span class="badge" style="cursor:pointer;background:${u.ativo?'#dcfce7':'#fee2e2'};color:${u.ativo?'#166534':'#991b1b'}" onclick="toggleAtivoUsuario(${u.id}, ${!u.ativo})">${u.ativo?'Ativo':'Inativo'}</span></td>
+      <td><button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="resetSenhaUsuario(${u.id}, '${u.nome}')">🔑 Reset Senha</button></td></tr>
     `).join('');
+}
+
+async function toggleAtivoUsuario(id, novoStatus){
+  const { error } = await sb.from('usuarios').update({ ativo: novoStatus }).eq('id', id);
+  if(error) return alert('Erro ao atualizar status: ' + error.message);
+  logAtividade('alterar_status_usuario', `Usuário #${id} → ${novoStatus?'Ativo':'Inativo'}`);
+  await carregarEquipe();
+  renderEquipe();
+}
+
+async function resetSenhaUsuario(id, nome){
+  const novaSenha = prompt(`Nova senha para ${nome}:`);
+  if(!novaSenha || novaSenha.trim().length < 4) { if(novaSenha!==null) alert('Senha deve ter ao menos 4 caracteres.'); return; }
+  const { error } = await sb.from('usuarios').update({ senha: novaSenha.trim() }).eq('id', id);
+  if(error) return alert('Erro ao resetar senha: ' + error.message);
+  logAtividade('reset_senha', `Senha redefinida para ${nome}`);
+  alert(`Senha de ${nome} redefinida com sucesso.`);
 }
 
 async function salvarUsuario(e){
