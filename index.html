@@ -301,7 +301,8 @@ function getVisibleData(){
   const user = JSON.parse(localStorage.getItem('crm_user'));
   if(!user) return [];
   if(PERFIS_MASTER.includes(user.cargo)) return db;
-  return db.filter(c => c.consultor === user.nome);
+  const nomeUser = (user.nome || "").toLowerCase().trim();
+  return db.filter(c => (c.consultor || "").toLowerCase().trim() === nomeUser);
 }
 
 function isMaster(){
@@ -310,29 +311,39 @@ function isMaster(){
 }
 
 function renderAll(){
-  renderDashboard();
-  renderFunil();
-  renderCarteira();
-  renderFinanceiro();
-  renderAuditoria();
-  if(isMaster()) renderEquipe();
+  try {
+    renderDashboard();
+    renderFunil();
+    renderCarteira();
+    renderFinanceiro();
+    renderAuditoria();
+    if(isMaster()) renderEquipe();
+  } catch(e) {
+    console.error('Erro ao renderizar:', e);
+  }
 }
 
 function renderDashboard(){
   const data = getVisibleData();
-  const total = data.reduce((s,c)=>s+c.premio,0);
-  const vidas = data.reduce((s,c)=>s+c.vidas,0);
-  const coms = data.reduce((s,c)=> s + (c.premio * (c.comissao/100)), 0);
-  const isM = PERFIS_MASTER.includes(JSON.parse(localStorage.getItem('crm_user')).cargo);
+  const total = data.reduce((s,c)=>s+(c.premio || 0),0);
+  const vidas = data.reduce((s,c)=>s+(c.vidas || 0),0);
+  const coms = data.reduce((s,c)=> s + ((c.premio || 0) * ((c.comissao || 0)/100)), 0);
+  const user = JSON.parse(localStorage.getItem('crm_user'));
+  const isM = user && PERFIS_MASTER.includes(user.cargo);
   document.getElementById('stats-grid').innerHTML = `
     <div class="stat-card"><div class="stat-label">Produção Mensal</div><div class="stat-value">R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>
     <div class="stat-card"><div class="stat-label">Vidas Ativas</div><div class="stat-value">${vidas}</div></div>
     <div class="stat-card"><div class="stat-label">${isM?'Resultado Líquido':'Minha Comissão'}</div><div class="stat-value" style="color:var(--brand)">R$ ${(isM?total-coms:coms).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>`;
-  const ctx = document.getElementById('chartMain').getContext('2d');
-  if(currentChart) currentChart.destroy();
-  const ops = {}; data.forEach(c => ops[c.operadora] = (ops[c.operadora]||0) + c.premio);
-  currentChart = new Chart(ctx, { type:'bar', data:{ labels:Object.keys(ops), datasets:[{data:Object.values(ops), backgroundColor:'#1EAD6F', borderRadius:8 }] }, options:{maintainAspectRatio:false, plugins:{legend:{display:false}}} });
-  const r = {}; data.forEach(c => r[c.consultor] = (r[c.consultor]||0) + c.premio);
+  
+  const ctxEl = document.getElementById('chartMain');
+  if (ctxEl) {
+    const ctx = ctxEl.getContext('2d');
+    if(currentChart) currentChart.destroy();
+    const ops = {}; data.forEach(c => ops[c.operadora] = (ops[c.operadora]||0) + (c.premio || 0));
+    currentChart = new Chart(ctx, { type:'bar', data:{ labels:Object.keys(ops), datasets:[{data:Object.values(ops), backgroundColor:'#1EAD6F', borderRadius:8 }] }, options:{maintainAspectRatio:false, plugins:{legend:{display:false}}} });
+  }
+
+  const r = {}; data.forEach(c => r[c.consultor] = (r[c.consultor]||0) + (c.premio || 0));
   const sorted = Object.entries(r).sort((a,b)=>b[1]-a[1]);
   document.getElementById('ranking-list').innerHTML = sorted.map(([n,v],i)=>`<div style="padding:15px; display:flex; justify-content:space-between; border-bottom:1px solid #f1f5f9; font-size:13.5px"><span><b>${i+1}º</b> ${n}</span><b>R$ ${v.toLocaleString('pt-BR')}</b></div>`).join('');
 }
@@ -384,32 +395,66 @@ function limparFiltrosCarteira(){
 }
 
 function renderCarteira(){
-  let data = getVisibleData();
-  popularFiltrosCarteira();
-  if(filtroAtivo) data = data.filter(c => c.cliente.toLowerCase().includes(filtroAtivo) || c.consultor.toLowerCase().includes(filtroAtivo) || c.operadora.toLowerCase().includes(filtroAtivo));
-  const fEst = document.getElementById('filtro-estagio')?.value;
-  const fOp = document.getElementById('filtro-operadora')?.value;
-  const fVend = document.getElementById('filtro-vendedor')?.value;
-  if(fEst) data = data.filter(c => c.estagio === fEst);
-  if(fOp) data = data.filter(c => c.operadora === fOp);
-  if(fVend) data = data.filter(c => c.consultor === fVend);
-  const isM = PERFIS_MASTER.includes(JSON.parse(localStorage.getItem('crm_user')).cargo);
-  document.getElementById('head-carteira').innerHTML = `<th>Cliente</th><th>Operadora</th><th>Vidas</th><th>Prêmio</th><th>Estágio</th>` + (isM ? `<th>Vendedor</th>` : '') + `<th>Status</th>`;
-  document.getElementById('table-body-carteira').innerHTML = data.map(c => `
-    <tr onclick="abrirEdicao(${c.id})" style="cursor:pointer"><td><b>${c.cliente}</b></td><td>${c.operadora}</td><td>${c.vidas}</td><td>R$ ${c.premio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td><td><span class="badge" style="background:var(--brand-light);color:var(--brand)">${c.estagio}</span></td>
-      ` + (isM ? `<td>${c.consultor}</td>` : '') + `<td><span class="badge" style="background:#dcfce7;color:#166534">Ativo</span></td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;padding:40px;color:#64748b">Vazio</td></tr>';
+  try {
+    let data = getVisibleData();
+    popularFiltrosCarteira();
+    if(filtroAtivo) data = data.filter(c => 
+      (c.cliente || "").toLowerCase().includes(filtroAtivo) || 
+      (c.consultor || "").toLowerCase().includes(filtroAtivo) || 
+      (c.operadora || "").toLowerCase().includes(filtroAtivo)
+    );
+    const fEst = document.getElementById('filtro-estagio')?.value;
+    const fOp = document.getElementById('filtro-operadora')?.value;
+    const fVend = document.getElementById('filtro-vendedor')?.value;
+    if(fEst) data = data.filter(c => c.estagio === fEst);
+    if(fOp) data = data.filter(c => c.operadora === fOp);
+    if(fVend) data = data.filter(c => (c.consultor || "").toLowerCase().trim() === fVend.toLowerCase().trim());
+    
+    const user = JSON.parse(localStorage.getItem('crm_user'));
+    const isM = user && PERFIS_MASTER.includes(user.cargo);
+    
+    document.getElementById('head-carteira').innerHTML = `<th>Cliente</th><th>Operadora</th><th>Vidas</th><th>Prêmio</th><th>Estágio</th>` + (isM ? `<th>Vendedor</th>` : '') + `<th>Status</th>`;
+    document.getElementById('table-body-carteira').innerHTML = data.map(c => `
+      <tr onclick="abrirEdicao(${c.id})" style="cursor:pointer">
+        <td><b>${c.cliente || "S/N"}</b></td>
+        <td>${c.operadora || "—"}</td>
+        <td>${c.vidas || 0}</td>
+        <td>R$ ${(c.premio || 0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+        <td><span class="badge" style="background:var(--brand-light);color:var(--brand)">${c.estagio || "Novo"}</span></td>
+        ` + (isM ? `<td>${c.consultor || "M.I"}</td>` : '') + `
+        <td><span class="badge" style="background:#dcfce7;color:#166534">Ativo</span></td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;padding:40px;color:#64748b">Vazio</td></tr>';
+  } catch(e) {
+    console.error("Erro renderCarteira:", e);
+    document.getElementById('table-body-carteira').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:red">Erro ao carregar lista.</td></tr>';
+  }
 }
 
 function renderFinanceiro(){
-  const data = getVisibleData();
-  const tCom = data.reduce((s,c)=> s + (c.premio * (c.comissao/100)), 0);
-  const tAge = data.reduce((s,c)=> s + (c.premio * (c.agenciamento/100)), 0);
-  const tBruto = data.reduce((s,c)=>s+c.premio,0);
-  document.getElementById('fin-com').textContent = `R$ ${tCom.toLocaleString('pt-BR')}`;
-  document.getElementById('fin-age').textContent = `R$ ${tAge.toLocaleString('pt-BR')}`;
-  document.getElementById('fin-imp').textContent = `R$ ${(tBruto*0.06).toLocaleString('pt-BR')}`;
-  document.getElementById('table-body-fin').innerHTML = `<tr><td>Entrada Prêmios</td><td>R$ ${tBruto.toLocaleString()}</td><td>R$ ${tBruto.toLocaleString()}</td><td><span class="badge bg-ok">Previsto</span></td></tr>
-    <tr><td>Repasse Comissão</td><td>-</td><td>R$ ${tCom.toLocaleString()}</td><td><span class="badge" style="background:#fee2e2;color:#991b1b">Pagar</span></td></tr>`;
+  try {
+    const data = getVisibleData();
+    const tCom = data.reduce((s,c)=> s + ((c.premio || 0) * ((c.comissao || 0)/100)), 0);
+    const tAge = data.reduce((s,c)=> s + ((c.premio || 0) * ((c.agenciamento || 0)/100)), 0);
+    const tBruto = data.reduce((s,c)=>s+(c.premio || 0),0);
+    
+    const elCom = document.getElementById('fin-com');
+    const elAge = document.getElementById('fin-age');
+    const elImp = document.getElementById('fin-imp');
+    const elTab = document.getElementById('table-body-fin');
+    
+    if(elCom) elCom.textContent = `R$ ${tCom.toLocaleString('pt-BR')}`;
+    if(elAge) elAge.textContent = `R$ ${tAge.toLocaleString('pt-BR')}`;
+    if(elImp) elImp.textContent = `R$ ${(tBruto*0.06).toLocaleString('pt-BR')}`;
+    
+    if(elTab) {
+      elTab.innerHTML = `
+        <tr><td>Entrada Prêmios</td><td>R$ ${tBruto.toLocaleString()}</td><td>R$ ${tBruto.toLocaleString()}</td><td><span class="badge bg-ok">Previsto</span></td></tr>
+        <tr><td>Repasse Comissão</td><td>-</td><td>R$ ${tCom.toLocaleString()}</td><td><span class="badge" style="background:#fee2e2;color:#991b1b">Pagar</span></td></tr>
+      `;
+    }
+  } catch(e) {
+    console.error("Erro renderFinanceiro:", e);
+  }
 }
 
 function renderEquipe(){
@@ -529,46 +574,77 @@ async function consultarCEP(ctx, btn){
     } catch(e){} finally { btn.textContent = oldT; }
 }
 
-function vazioParaNull(v){ return (v === '' || v === undefined) ? null : v; }
+function vazioParaNull(v){ 
+  if (v === '' || v === undefined || v === null) return null;
+  return v;
+}
+
+function parseNumero(v){
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
 
 async function salvarVenda(e){
   e.preventDefault();
   const f = e.target;
-  const payload = {
-    cliente: f.cliente.value, cnpj: f.cnpj.value, email: f.email.value, telefone: f.telefone.value,
-    cep: f.cep.value, logradouro: f.logradouro.value,
-    operadora: f.operadora.value, vidas: f.vidas.value, premio: f.premio.value, estagio: f.estagio.value, data_renovacao: vazioParaNull(f.data.value),
-    consultor: JSON.parse(localStorage.getItem('crm_user')).nome
-  };
-  const { error } = await sb.from('contratos').insert(payload);
-  if(error){ alert('Erro ao salvar: ' + error.message); return; }
-  logAtividade('criar', payload.cliente);
-  await carregarDados();
-  renderAll();
-  f.reset();
-  showView('carteira', document.querySelector('.nav-item[onclick*="carteira"]'));
-  alert('Operação salva com sucesso!');
+  try {
+    const user = JSON.parse(localStorage.getItem('crm_user'));
+    const payload = {
+      cliente: f.cliente.value || 'S/N', 
+      cnpj: f.cnpj.value || '', 
+      email: f.email.value || '', 
+      telefone: f.telefone.value || '',
+      cep: f.cep.value || '', 
+      logradouro: f.logradouro.value || '',
+      operadora: f.operadora.value || '—', 
+      vidas: parseInt(f.vidas.value) || 0, 
+      premio: parseNumero(f.premio.value), 
+      estagio: f.estagio.value || 'Implantado', 
+      data_renovacao: vazioParaNull(f.data.value),
+      consultor: user.nome
+    };
+    const { error } = await sb.from('contratos').insert(payload);
+    if(error) throw error;
+    logAtividade('criar', payload.cliente);
+    await carregarDados();
+    renderAll();
+    f.reset();
+    showView('carteira', document.querySelector('.nav-item[onclick*="carteira"]'));
+    alert('Operação salva com sucesso!');
+  } catch(err) {
+    alert('Erro ao salvar: ' + err.message);
+  }
 }
 
 async function salvarEdicao(e){
   e.preventDefault();
   const id = document.getElementById('edit-id').value;
   const user = JSON.parse(localStorage.getItem('crm_user'));
-  const payload = {
-    cliente: document.getElementById('edit-cliente').value, cnpj: document.getElementById('edit-cnpj').value,
-    email: document.getElementById('edit-email').value, telefone: document.getElementById('edit-telefone').value,
-    estagio: document.getElementById('edit-estagio').value, data_renovacao: vazioParaNull(document.getElementById('edit-data').value),
-    premio: document.getElementById('edit-premio').value, comissao: document.getElementById('edit-comissao').value,
-    agenciamento: document.getElementById('edit-agenciamento').value, data_pagamento: vazioParaNull(document.getElementById('edit-pagamento').value),
-    feedback: document.getElementById('edit-feedback').value,
-    consultor: PERFIS_MASTER.includes(user.cargo) ? document.getElementById('edit-vendedor').value : db.find(x=>x.id==id).consultor
-  };
-  const { error } = await sb.from('contratos').update(payload).eq('id', id);
-  if(error){ alert('Erro ao salvar edição: ' + error.message); return; }
-  logAtividade('editar', payload.cliente);
-  await carregarDados();
-  renderAll();
-  fecharModal();
+  try {
+    const payload = {
+      cliente: document.getElementById('edit-cliente').value || 'S/N', 
+      cnpj: document.getElementById('edit-cnpj').value || '',
+      email: document.getElementById('edit-email').value || '', 
+      telefone: document.getElementById('edit-telefone').value || '',
+      estagio: document.getElementById('edit-estagio').value || 'Implantado', 
+      data_renovacao: vazioParaNull(document.getElementById('edit-data').value),
+      premio: parseNumero(document.getElementById('edit-premio').value), 
+      comissao: parseNumero(document.getElementById('edit-comissao').value),
+      agenciamento: parseNumero(document.getElementById('edit-agenciamento').value), 
+      data_pagamento: vazioParaNull(document.getElementById('edit-pagamento').value),
+      feedback: document.getElementById('edit-feedback').value || '',
+      consultor: PERFIS_MASTER.includes(user.cargo) ? document.getElementById('edit-vendedor').value : (db.find(x=>x.id==id)?.consultor || 'M.I')
+    };
+    const { error } = await sb.from('contratos').update(payload).eq('id', id);
+    if(error) throw error;
+    logAtividade('editar', payload.cliente);
+    await carregarDados();
+    renderAll();
+    fecharModal();
+    alert('Alterações salvas!');
+  } catch(err) {
+    alert('Erro ao salvar edição: ' + err.message);
+  }
 }
 
 async function excluirContrato(){
