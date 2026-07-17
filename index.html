@@ -261,14 +261,23 @@ async function initApp(){
     document.getElementById('btn-gestores').style.display = 'block';
   }
   if(user.usuario === 'diniz') document.getElementById('nav-dev').style.display = 'block';
-  await carregarDados();
-  if(isMaster()) await carregarEquipe();
-  renderAll();
-  document.getElementById('loading-overlay').style.display = 'none';
+  try {
+    await carregarDados();
+    if(isMaster()) await carregarEquipe();
+    renderAll();
+  } catch(error) {
+    console.error(error);
+    alert(error.message + ' Tente recarregar em alguns segundos.');
+  } finally {
+    document.getElementById('loading-overlay').style.display = 'none';
+  }
 }
 
 async function carregarDados(){
   const { data, error } = await sb.from('contratos').select('*').order('id',{ascending:true});
+  if(error){
+    throw new Error('Não foi possível carregar a carteira: ' + error.message);
+  }
   db = (data || []).map(r => ({
     id: r.id, cliente: r.cliente || 'S/N', cnpj: r.cnpj || '', email: r.email || '', telefone: r.telefone || '',
     cep: r.cep || '', logradouro: r.logradouro || '', bairro: r.bairro || '', cidade: r.cidade || '', uf: r.uf || '',
@@ -284,11 +293,24 @@ async function carregarEquipe(){
 
 function getVisibleData(){
   const user = JSON.parse(localStorage.getItem('crm_user'));
+  if(!user) return [];
   if(PERFIS_MASTER.includes(user.cargo)) return db;
   return db.filter(c => c.consultor === user.nome);
 }
 
-function renderAll(){ renderDashboard(); renderFunil(); renderCarteira(); renderFinanceiro(); renderAuditoria(); if(isMaster()) renderEquipe(); }
+function isMaster(){
+  const user = JSON.parse(localStorage.getItem('crm_user'));
+  return Boolean(user && PERFIS_MASTER.includes(user.cargo));
+}
+
+function renderAll(){
+  renderDashboard();
+  renderFunil();
+  renderCarteira();
+  renderFinanceiro();
+  renderAuditoria();
+  if(isMaster()) renderEquipe();
+}
 
 function renderDashboard(){
   const data = getVisibleData();
