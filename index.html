@@ -441,7 +441,12 @@ async function salvarUsuario(e){
     e.preventDefault();
     const payload = { nome: document.getElementById('nu-nome').value, usuario: document.getElementById('nu-usuario').value, senha: document.getElementById('nu-senha').value, cargo: document.getElementById('nu-cargo').value, ativo: true };
     const { error } = await sb.from('usuarios').insert(payload);
-    if(!error){ alert('Usuário criado!'); location.reload(); }
+    if(error){ alert('Erro ao criar usuário: ' + error.message); return; }
+    logAtividade('criar_usuario', `${payload.nome} (${payload.usuario})`);
+    await carregarEquipe();
+    renderEquipe();
+    e.target.reset();
+    alert('Usuário criado com sucesso!');
 }
 
 async function renderAuditoria(){
@@ -533,9 +538,14 @@ async function salvarVenda(e){
     operadora: f.operadora.value, vidas: f.vidas.value, premio: f.premio.value, estagio: f.estagio.value, data_renovacao: f.data.value,
     consultor: JSON.parse(localStorage.getItem('crm_user')).nome
   };
-  await sb.from('contratos').insert(payload);
+  const { error } = await sb.from('contratos').insert(payload);
+  if(error){ alert('Erro ao salvar: ' + error.message); return; }
   logAtividade('criar', payload.cliente);
-  location.reload();
+  await carregarDados();
+  renderAll();
+  f.reset();
+  showView('carteira', document.querySelector('.nav-item[onclick*="carteira"]'));
+  alert('Operação salva com sucesso!');
 }
 
 async function salvarEdicao(e){
@@ -551,15 +561,23 @@ async function salvarEdicao(e){
     feedback: document.getElementById('edit-feedback').value,
     consultor: PERFIS_MASTER.includes(user.cargo) ? document.getElementById('edit-vendedor').value : db.find(x=>x.id==id).consultor
   };
-  await sb.from('contratos').update(payload).eq('id', id);
+  const { error } = await sb.from('contratos').update(payload).eq('id', id);
+  if(error){ alert('Erro ao salvar edição: ' + error.message); return; }
   logAtividade('editar', payload.cliente);
-  location.reload();
+  await carregarDados();
+  renderAll();
+  fecharModal();
 }
 
 async function excluirContrato(){
   if(confirm('Excluir permanentemente?')){
-    await sb.from('contratos').delete().eq('id', document.getElementById('edit-id').value);
-    location.reload();
+    const id = document.getElementById('edit-id').value;
+    const { error } = await sb.from('contratos').delete().eq('id', id);
+    if(error){ alert('Erro ao excluir: ' + error.message); return; }
+    logAtividade('excluir', `Contrato #${id}`);
+    await carregarDados();
+    renderAll();
+    fecharModal();
   }
 }
 
