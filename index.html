@@ -529,13 +529,15 @@ async function consultarCEP(ctx, btn){
     } catch(e){} finally { btn.textContent = oldT; }
 }
 
+function vazioParaNull(v){ return (v === '' || v === undefined) ? null : v; }
+
 async function salvarVenda(e){
   e.preventDefault();
   const f = e.target;
   const payload = {
     cliente: f.cliente.value, cnpj: f.cnpj.value, email: f.email.value, telefone: f.telefone.value,
     cep: f.cep.value, logradouro: f.logradouro.value,
-    operadora: f.operadora.value, vidas: f.vidas.value, premio: f.premio.value, estagio: f.estagio.value, data_renovacao: f.data.value,
+    operadora: f.operadora.value, vidas: f.vidas.value, premio: f.premio.value, estagio: f.estagio.value, data_renovacao: vazioParaNull(f.data.value),
     consultor: JSON.parse(localStorage.getItem('crm_user')).nome
   };
   const { error } = await sb.from('contratos').insert(payload);
@@ -555,9 +557,9 @@ async function salvarEdicao(e){
   const payload = {
     cliente: document.getElementById('edit-cliente').value, cnpj: document.getElementById('edit-cnpj').value,
     email: document.getElementById('edit-email').value, telefone: document.getElementById('edit-telefone').value,
-    estagio: document.getElementById('edit-estagio').value, data_renovacao: document.getElementById('edit-data').value,
+    estagio: document.getElementById('edit-estagio').value, data_renovacao: vazioParaNull(document.getElementById('edit-data').value),
     premio: document.getElementById('edit-premio').value, comissao: document.getElementById('edit-comissao').value,
-    agenciamento: document.getElementById('edit-agenciamento').value, data_pagamento: document.getElementById('edit-pagamento').value,
+    agenciamento: document.getElementById('edit-agenciamento').value, data_pagamento: vazioParaNull(document.getElementById('edit-pagamento').value),
     feedback: document.getElementById('edit-feedback').value,
     consultor: PERFIS_MASTER.includes(user.cargo) ? document.getElementById('edit-vendedor').value : db.find(x=>x.id==id).consultor
   };
